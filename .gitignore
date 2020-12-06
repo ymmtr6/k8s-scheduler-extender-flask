@@ -2,3 +2,8 @@
 
 *.pyc
 __pycache__
+
+*.yml
+*.json
+*.yaml
+*.png
