@@ -16,11 +16,12 @@ class Node(object):
         self.jobs = []
 
     def predicate(self, job):
-        # return job.ram <= self.ram and job.cpu <= self.cpu and job.gpu <= self.gpu
-        return job.cpu <= self.cpu
+        return job.ram <= self.ram and job.cpu <= self.cpu and job.gpu <= self.gpu
+        # return job.cpu <= self.cpu
 
     def priorities(self, job):
-        return self.cpu - job.cpu
+        # return self.cpu - job.cpu
+        return 4 - (self.cpu - job.cpu)
 
     def add(self, T, job):
         self.jobs.append(job)
@@ -88,11 +89,11 @@ n = [
 ]
 
 jobs = [
-    {"name": "job1", "ram": 2, "gpu": 0, "cpu": 2, "time": 200, },
+    {"name": "job1", "ram": 2, "gpu": 0, "cpu": 2, "time": 200},
     {"name": "job2", "ram": 1, "gpu": 0, "cpu": 4, "time": 100},
     {"name": "job3", "ram": 2, "gpu": 0, "cpu": 2, "time": 150},
     {"name": "job4", "ram": 2, "gpu": 0, "cpu": 4, "time": 300},
-    {"name": "job5", "ram": 1, "gpu": 0, "cpu": 3, "time": 500}
+    #    {"name": "job5", "ram": 1, "gpu": 0, "cpu": 3, "time": 500}
 ]
 
 Nodes = [Node(i["name"], i["ram"], i["gpu"], i["cpu"]) for i in n]
@@ -113,10 +114,12 @@ for T in range(0, TURN):
     for job in Jobs:  # 　本来Jobはランダムフェッチ
         if job.status == "Pending":
             predicates = [n.predicate(job) for n in Nodes]
-            # print(predicates)
+            #print([n for n in Nodes if n.predicate(job)])
             priorities = [n.priorities(job) for n in Nodes]
-            # print(priorities)
-            # 本来スコアが同数の場合も考慮する
+            for i, p in enumerate(predicates):
+                if not p:
+                    priorities[i] = -1
+            # 本来はスコアが同数の場合も考慮する
             target = priorities.index(max(priorities))
             # print(target)
             if predicates[target]:
@@ -137,4 +140,4 @@ for job in Jobs:
 print([i for i in pods.keys()])
 obj = God(pods=pods, max=TURN)
 
-obj.plot(output="sample.png")
+obj.plot(output="sample2.png")
