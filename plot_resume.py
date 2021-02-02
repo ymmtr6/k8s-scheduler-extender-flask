@@ -45,16 +45,16 @@ class God(object):
         self.colors = list(mcolors.TABLEAU_COLORS.values())
         self.node_list = {}
         self.node_color = {
-            "node2": self.colors[0],
-            "node3": self.colors[1],
-            "node4": self.colors[2],
-            "nagato": self.colors[3],
-            "node1": self.colors[3]
-            # "node2": "0.2",
-            # "node3": "0.4",
-            # "node4": "0.6",
-            # "nagato": "0.8",
-            # "node1": "0.8"
+            # "node2": self.colors[0],
+            # "node3": self.colors[1],
+            # "node4": self.colors[2],
+            # "nagato": self.colors[3],
+            # "node1": self.colors[3]
+            "node2": "0.2",
+            "node3": "0.4",
+            "node4": "0.6",
+            "nagato": "0.8",
+            "node1": "0.8"
         }
         self.hatches = {
             "node2": "xxx",
@@ -69,7 +69,7 @@ class God(object):
         timestamp = datetime.datetime.fromisoformat(text.replace("Z", ""))
         return timestamp
 
-    def load(self, json_file, jobs=60):
+    def load(self, json_file):
         with open(json_file) as f:
             events = json.load(f)
         items = events["items"]
@@ -78,23 +78,23 @@ class God(object):
             if reason == "Scheduled":
                 name = item.get("involvedObject").get("name").split("-")[0]
                 node = item.get("message").split(" to ")[1]
-                self.getPod(name, jobs=jobs)["node_name"] = node
+                self.getPod(name)["node_name"] = node
             elif reason == "SuccessfulCreate":
                 name = item.get("involvedObject").get("name")
                 container_name = item.get("message").split(": ")[1]
                 timestamp = item.get("firstTimestamp")
-                self.getPod(name, jobs=jobs)["container_name"] = container_name
+                self.getPod(name)["container_name"] = container_name
             elif reason == "Completed":
                 name = item.get("involvedObject").get("name")
                 timestamp = item.get("firstTimestamp")
-                self.getPod(name, jobs=jobs)[
+                self.getPod(name)[
                     "end"] = self.translate_datetime(timestamp)
             elif reason == "Created":
                 pass
             elif reason == "Started":
                 name = item.get("involvedObject").get("name").split("-")[0]
                 timestamp = item.get("firstTimestamp")
-                self.getPod(name, jobs=jobs)[
+                self.getPod(name)[
                     "start"] = self.translate_datetime(timestamp)
             elif reason == "Pulling":
                 pass
@@ -114,9 +114,7 @@ class God(object):
             else:
                 self.node_list[node_name].append(pod)
 
-    def getPod(self, name, jobs=15):
-        if name not in ["job{:02d}".format(j+1) for j in range(jobs)]:
-            return {"name": name, "container_name": None, "node_name": None, "start": datetime.datetime.now(), "end": None, "second": 0}
+    def getPod(self, name):
         if name not in self.pods.keys():
             self.pods[name] = {
                 "name": name,
@@ -148,8 +146,8 @@ class God(object):
         # eturn [mpatches.Patch(facecolor=self._color_mapping(i), label=i, hatch=self.hatches[i]) for i in node_name]
         return [mpatches.Patch(facecolor=self._color_mapping(i), edgecolor="0.0", label=i, hatch=self.hatches[i]) for i in node_name if i != "nagato"]
 
-    def plot(self, output="gantt1.png", x_mergin=60, job_num=15):
-        fig, gnt = plt.subplots()
+    def plot(self, output="gantt1.png", x_mergin=60, job_num=15, subplot=1, fig=plt.figure()):
+        gnt = fig.add_subplot(2, 1, subplot)
         self.oldest_timestamp = min([i["start"] for i in self.pods.values()])
         labels = [i for i in self.pods.keys()]
         labels.sort()
@@ -157,11 +155,17 @@ class God(object):
         #ticks = [i * self.mergin + self.mergin for i in range(len(labels))]
         gnt.set_ylim(0, len(labels) * self.mergin + self.mergin)
         gnt.set_xlim(0, self.max)
-        gnt.set_xlabel("seconds since start")
+        gnt.set_xticks(np.arange(0.0, self.max + 1.0, x_mergin))
+        if subplot == 2:
+            gnt.set_xlabel("seconds since start")
+            gnt.set_title("our method")
+        else:
+            gnt.set_title("default")
+            gnt.set_xticklabels([])
+
         gnt.set_ylabel("Job ID")
         gnt.set_yticks(np.arange(self.mergin, len(labels) *
                                  self.mergin + self.mergin, self.mergin))
-        gnt.set_xticks(np.arange(0.0, self.max + 1.0, x_mergin))
         gnt.set_yticklabels([l.replace("job", "") for l in labels])
         gnt.set_axisbelow(True)
         gnt.grid(True)
@@ -186,9 +190,10 @@ class God(object):
                 edgecolor="0.0",
                 hatch=self.hatches[v["node_name"]]
             )
-        plt.legend(loc="lower right",
-                   handles=self._legend(), fontsize=14)
-        plt.savefig(output)
+        # plt.legend(loc="lower right",
+        #           handles=self._legend(), fontsize=14)
+        # plt.show()
+        # plt.savefig(output)
 
     def plot_node(self, output="gantt2"):
         fig, gnt = plt.subplots()
@@ -221,13 +226,23 @@ class God(object):
                 self.pods.pop(i)
 
 
-def main(filename="event.json", output="gantt", max=600, mergin=60, jobs=60):
+def main(filename="event.json", output="gantt", max=600, mergin=60):
     obj = God(max=max)
-    obj.load(filename, jobs=jobs)
+    obj.load(filename)
+    obj2 = God(max=max)
+    obj2.load("default_p.json")
+
+    fig = plt.figure()
     #obj.delete_items(["stress1", "stress2", "stress3"])
-    obj.plot(output=output+"1.png", x_mergin=mergin)
-    obj.plot_node(output=output+"2.png")
-    pprint.pprint(obj.pods)
+    obj2.plot(output="none.jpng", x_mergin=mergin, subplot=1, fig=fig)
+    obj.plot(output=output+"1.png", x_mergin=mergin, fig=fig, subplot=2)
+
+    plt.legend(loc="lower right",
+                   handles=obj._legend(), fontsize=12)
+    plt.show()
+    # plt.savefig(output)
+    # obj.plot_node(output=output+"2.png")
+    # pprint.pprint(obj.pods)
 
 
 if __name__ == "__main__":
@@ -237,8 +252,6 @@ if __name__ == "__main__":
     parser.add_argument("output")
     parser.add_argument("-m", "--max", type=float, default=600)
     parser.add_argument("--mergin", type=float, default=60)
-    parser.add_argument("-j", "--jobs", type=int, default=60)
     ARGS = parser.parse_args()
     print(ARGS)
-    main(ARGS.file, ARGS.output, ARGS.max, ARGS.mergin, ARGS.jobs)
-    
+    main(ARGS.file, ARGS.output, ARGS.max, ARGS.mergin)

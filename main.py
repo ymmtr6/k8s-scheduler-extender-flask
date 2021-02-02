@@ -4,12 +4,15 @@ from flask import *
 import logging
 import json
 import topsis
+import datetime
+from collections import deque
 
 VERSION = "0.0.1"
 app = Flask(__name__)
 
 Pod_Metrics = {}
 Node_Metrics = {}
+Pod_Queue = deque([])
 
 with open("node_metrics.json", "r") as f:
     Node_Metrics = json.load(f)
@@ -29,14 +32,23 @@ class Node(object):
         self.allocatable = self.status["allocatable"]
 
     def avairable(self, use, parts="cpu"):
+        if "clock" in parts:
+            return self.cost(parts)
         allocate = int(self.allocatable.get(parts, 0))
         capacity = int(self.capacity.get(parts, 0))
         if parts == "nvidia.com/gpu":
             return allocate
         if capacity != 0:
-            return (allocate - use) / capacity
+            # 使用量
+            return (capacity - allocate) + use / capacity
         else:
             return 0.0
+
+    def cost(self, parts="cpu_clock"):
+        if self.name in Node_Metrics.keys() and parts in Node_Metrics[self.name].keys():
+            return Node_Metrics[self.name][parts]
+        else:
+            return 0
 
     def avairable_value(self, uses, parts):
         return [self.avairable(u, p) for u, p in zip(uses, parts)]
@@ -45,7 +57,10 @@ class Node(object):
 class Pod(object):
 
     def __init__(self, pod):
+        self.pod = pod
         self.name = pod.get("metadata").get("name")
+        self.user = pod.get("metadata").get("labels", {}).get("user", None)
+        self.eta = pod.get("metadata").get("labels", {}).get("time", None)
         self.spec = pod.get("spec")
         self.containers = self.spec.get("containers", [])
 
@@ -69,15 +84,42 @@ def version():
 @ app.route("/scheduler/predicates/always_true", methods=["POST"])
 def predicates():
     req = request.json
-    # app.logger.debug("predicates request: " +
-    #                 json.dumps(req, ensure_ascii=False))
+    app.logger.debug("predicates request: " +
+                     json.dumps(req, ensure_ascii=False))
     # Always True
     # app.logger.debug("predicates response: " + json.dumps(
     #    {"Nodes": req["Nodes"], "NodeNames": None, "FailedNodes": {}, "Error": ""}))
 
     # userが足りなければ，ここで切り取る
     #
-    return jsonify({"Nodes": req["Nodes"], "NodeNames": None, "FailedNodes": {}, "Error": ""})
+    pod = Pod(req["Pod"])
+    response = {"Nodes": req["Nodes"],
+                "NodeNames": None, "FailedNodes": {}, "Error": ""}
+    # ETAを計算して，3つ以上並行なら受けつけない
+    eta = 180
+    if pod.eta is not None:
+        eta = int(pod.eta)
+    now = datetime.datetime.now()
+    eta_time = now + datetime.timedelta(seconds=eta)
+    app.logger.debug(pod.user)
+    app.logger.debug(Pod_Metrics)
+    if len(Pod_Queue) != 0 and pod.name == Pod_Queue[0]:
+        Pod_Queue.popleft()
+    elif pod.user in Pod_Metrics:
+        # ETA削除処理
+        Pod_Metrics[pod.user] = [m for m in Pod_Metrics[pod.user] if now < m]
+        # 4つ以上ある場合は削除
+        if len(Pod_Metrics[pod.user]) >= 3:
+            response = {"Nodes": [], "NodeNames": None,
+                        "FailedNodes": req["Nodes"], "Error": ""}
+            Pod_Queue.append(pod.name)
+            app.logger.debug("PENDING")
+        else:
+            # pendingしない場合は削除
+            Pod_Metrics[pod.user].append(eta_time)
+        app.logger.debug(Pod_Metrics[pod.user])
+    #print(json.dumps(response, ensure_ascii=False))
+    return jsonify(response)
 
 
 @ app.route("/scheduler/priorities/zero_score", methods=["POST"])
@@ -89,18 +131,23 @@ def priorities():
     req = request.json
     pod = Pod(req["Pod"])
     nodes = [Node(n) for n in req["Nodes"]["items"]]
-    #app.logger.debug("priorities request: " + json.dumps(req))
+    # app.logger.debug("priorities request: " + json.dumps(req))
     # parts定義
-    parts = ["cpu", "ram", "nvidia.com/gpu"]
+    parts = ["cpu", "ram", "nvidia.com/gpu", "cpu_clock", "gpu_clock"]
+    isBest = [True, True, False, True, True]
+    weight = [1/5, 1/5, 1/5, 1/5, 1/5]
     # jobのuse resource取得
     uses = pod.request_value(parts=parts)
+    if uses[2] == 0:
+        weight = [1/4, 1/4, 1/4, 1/4, 0]
     # Desision Matrix 生成(各nodeから作成)
     dm = [node.avairable_value(uses, parts) for node in nodes]
     app.logger.debug("decidion matrix: {}".format(dm))
     # topsisをから理想を取得
-    best, worst = topsis.TOPSIS(dm).get_rank()
+    best, worst = topsis.TOPSIS(dm).set_isbest(
+        isBest).set_weight(weight).get_rank()
     # best scoreを10に
-    nodes[best].score = 10
+    nodes[best].score = 50
 
     priorities = [{"Host": n.name, "Score": n.score}
                   for n in nodes]

@@ -1,6 +1,27 @@
 # -*- coding : utf-8
 
 import numpy as np
+from numpy.core.numeric import True_
+
+"""
+\begin{align*}
+    % \begin{array}{c}
+    %     \mathrm{node1} \\
+    %     \mathrm{node2} \\
+    %     \mathrm{node3} \\
+    %     \mathrm{node4} \\
+    % \end{array}
+    \left (
+    \begin{array}{ccccc}
+        0.30 & 0.24 & 1.0 & 3.5 & 10.25 \\
+        0.90 & 0.67 & 1.0 & 3.1 & 3.7 \\
+        0.85 & 0.52 & 1.0 & 3.2 & 3.9 \\
+        0.78 & 0.55 & 1.0 & 3.2 & 3.9
+    \end{array}
+    \right )
+\end{align*}
+
+"""
 
 
 class TOPSIS(object):
@@ -25,16 +46,20 @@ class TOPSIS(object):
             self.isBest = isBest
 
     def set_weight(self, weight):
+        if type(weight) == list:
+            weight = np.array(weight)
         self.weight = weight
         return self
 
     def set_isbest(self, isBest):
+        if type(isBest) == list:
+            isBest = np.array(isBest)
         self.isBest = isBest
         return self
 
     def _normalize(self):
         N = np.sqrt(np.sum(self.DM * self.DM, axis=0))
-        #self.NDM = self.DM / N
+        # self.NDM = self.DM / N
         # true_divide を回避
         self.NDM = np.divide(
             self.DM, N, out=np.zeros_like(self.DM), where=N != 0)
@@ -74,17 +99,20 @@ class TOPSIS(object):
         self._normalize()
         self._weighted_ndm()
         self._choise_best()
+        print(self.WNDM)
+        print(self.best)
+
         self._separation_measure()
         return self._rc()
 
 
 if __name__ == "__main__":
     sample = [
-        [7, 9, 9, 8],
-        [8, 7, 8, 7],
-        [9, 6, 8, 9],
-        [6, 7, 8, 6]
+        [0.50, 0.64, 1.0, 3.5, 10.25],
+        [0.90, 0.67, 0.0, 3.1, 0.0],
+        [0.85, 0.62, 1.0, 3.2, 3.9],
+        [0.78, 0.52, 1.0, 3.2, 3.9]
     ]
     weight = np.array([0.1, 0.4, 0.3, 0.2])
-    isBest = np.array([True, True, True, False])
-    print(TOPSIS(sample).set_isbest(isBest).set_weight(weight).get_rank())
+    isBest = np.array([True, True, True, True, True])
+    print(TOPSIS(sample).set_isbest(isBest).get_rank())
